@@ -1,6 +1,6 @@
 import jwt
 
-from django.contrib.auth.signals import user_logged_in
+from django.contrib.auth import get_user_model
 from django.utils.encoding import smart_text
 from django.utils.translation import ugettext as _
 from rest_framework import exceptions
@@ -8,7 +8,6 @@ from rest_framework.authentication import (
     BaseAuthentication, get_authorization_header
 )
 
-from rest_framework_jwt.compat import get_user_model
 from rest_framework_jwt.settings import api_settings
 
 
@@ -42,7 +41,6 @@ class BaseJSONWebTokenAuthentication(BaseAuthentication):
             raise exceptions.AuthenticationFailed()
 
         user = self.authenticate_credentials(payload)
-        user_logged_in.send(sender=user.__class__, request=request, user=user)
 
         return (user, jwt_value)
 
@@ -103,4 +101,4 @@ class JSONWebTokenAuthentication(BaseJSONWebTokenAuthentication):
         header in a `401 Unauthenticated` response, or `None` if the
         authentication scheme should return `403 Permission Denied` responses.
         """
-        return 'JWT realm="{0}"'.format(self.www_authenticate_realm)
+        return '{0} realm="{1}"'.format(api_settings.JWT_AUTH_HEADER_PREFIX, self.www_authenticate_realm)

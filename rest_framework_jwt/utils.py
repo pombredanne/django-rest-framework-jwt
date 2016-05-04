@@ -1,4 +1,5 @@
 import jwt
+import uuid
 import warnings
 from calendar import timegm
 from datetime import datetime
@@ -23,6 +24,8 @@ def jwt_payload_handler(user):
         'username': username,
         'exp': datetime.utcnow() + api_settings.JWT_EXPIRATION_DELTA
     }
+    if isinstance(user.pk, uuid.UUID):
+        payload['user_id'] = str(user.pk)
 
     payload[username_field] = username
 
@@ -32,6 +35,12 @@ def jwt_payload_handler(user):
         payload['orig_iat'] = timegm(
             datetime.utcnow().utctimetuple()
         )
+
+    if api_settings.JWT_AUDIENCE is not None:
+        payload['aud'] = api_settings.JWT_AUDIENCE
+
+    if api_settings.JWT_ISSUER is not None:
+        payload['iss'] = api_settings.JWT_ISSUER
 
     return payload
 
@@ -59,7 +68,7 @@ def jwt_get_username_from_payload_handler(payload):
 def jwt_encode_handler(payload):
     return jwt.encode(
         payload,
-        api_settings.JWT_SECRET_KEY,
+        api_settings.JWT_PRIVATE_KEY or api_settings.JWT_SECRET_KEY,
         api_settings.JWT_ALGORITHM
     ).decode('utf-8')
 
@@ -71,7 +80,7 @@ def jwt_decode_handler(token):
 
     return jwt.decode(
         token,
-        api_settings.JWT_SECRET_KEY,
+        api_settings.JWT_PUBLIC_KEY or api_settings.JWT_SECRET_KEY,
         api_settings.JWT_VERIFY,
         options=options,
         leeway=api_settings.JWT_LEEWAY,
@@ -92,7 +101,7 @@ def jwt_response_payload_handler(token, user=None, request=None):
     def jwt_response_payload_handler(token, user=None, request=None):
         return {
             'token': token,
-            'user': UserSerializer(user).data
+            'user': UserSerializer(user, context={'request': request}).data
         }
 
     """

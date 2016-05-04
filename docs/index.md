@@ -28,8 +28,18 @@ If you want to know more about JWT, check out the following resources:
 ## Requirements
 
 - Python (2.7, 3.3, 3.4)
-- Django (1.6, 1.7)
-- Django REST Framework (2.4, 3.0, 3.1, 3.2)
+- Django (1.8, 1.9)
+- Django REST Framework (3.0, 3.1, 3.2, 3.3)
+
+## Security
+
+Unlike some more typical uses of JWTs, this module only generates
+authentication tokens that will verify the user who is requesting one of your DRF
+protected API resources. The actual
+request parameters themselves are *not* included in the JWT claims which means
+they are not signed and may be tampered with. You should only expose your API
+endpoints over SSL/TLS to protect against content tampering and certain kinds of
+replay attacks.
 
 ## Installation
 
@@ -59,24 +69,27 @@ REST_FRAMEWORK = {
 In your `urls.py` add the following URL route to enable obtaining a token via a POST included the user's username and password.
 
 ```python
+from rest_framework_jwt.views import obtain_jwt_token
+#...
+
 urlpatterns = patterns(
     '',
     # ...
 
-    url(r'^api-token-auth/', 'rest_framework_jwt.views.obtain_jwt_token'),
+    url(r'^api-token-auth/', obtain_jwt_token),
 )
 ```
 
-You can easily test if the endpoint is working by doing the following in your terminal, if you had a user created with the username **admin** and password **abc123**.
+You can easily test if the endpoint is working by doing the following in your terminal, if you had a user created with the username **admin** and password **password123**.
 
 ```bash
-$ curl -X POST -d "username=admin&password=abc123" http://localhost:8000/api-token-auth/
+$ curl -X POST -d "username=admin&password=password123" http://localhost:8000/api-token-auth/
 ```
 
 Alternatively, you can use all the content types supported by the Django REST framework to obtain the auth token. For example:
 
 ```bash
-$ curl -X POST -H "Content-Type: application/json" -d '{"username":"admin","password":"abc123"}' http://localhost:8000/api-token-auth/
+$ curl -X POST -H "Content-Type: application/json" -d '{"username":"admin","password":"password123"}' http://localhost:8000/api-token-auth/
 ```
 
 Now in order to access protected api urls you must include the `Authorization: JWT <your_token>` header.
@@ -88,7 +101,13 @@ $ curl -H "Authorization: JWT <your_token>" http://localhost:8000/protected-url/
 ## Refresh Token
 If `JWT_ALLOW_REFRESH` is True, issued tokens can be "refreshed" to obtain a new brand token with renewed expiration time. Add a URL pattern like this:
 ```python
-    url(r'^api-token-refresh/', 'rest_framework_jwt.views.refresh_jwt_token'),
+    from rest_framework_jwt.views import refresh_jwt_token
+    #  ...
+
+    urlpatterns = [
+        #  ...
+        url(r'^api-token-refresh/', refresh_jwt_token),
+    ]
 ```
 
 Pass in an existing token to the refresh endpoint as follows: `{"token": EXISTING_TOKEN}`. Note that only non-expired tokens will work. The JSON response looks the same as the normal obtain token endpoint `{"token": NEW_TOKEN}`.
@@ -107,7 +126,14 @@ In some microservice architectures, authentication is handled by a single servic
 
 This setup is supported in this package using a verification endpoint. Add the following URL pattern:
 ```python
-    url(r'^api-token-verify/', 'rest_framework_jwt.views.verify_jwt_token'),
+    from rest_framework_jwt.views import verify_jwt_token
+
+    #...
+
+    urlpatterns = [
+        #  ...
+        url(r'^api-token-verify/', verify_jwt_token),
+    ]
 ```
 
 Passing a token to the verification endpoint will return a 200 response and the token if it is valid. Otherwise, it will return a 400 Bad Request as well as an error identifying why the token was invalid.
@@ -137,6 +163,8 @@ JWT_AUTH = {
     'rest_framework_jwt.utils.jwt_response_payload_handler',
 
     'JWT_SECRET_KEY': settings.SECRET_KEY,
+    'JWT_PUBLIC_KEY': None,
+    'JWT_PRIVATE_KEY': None,
     'JWT_ALGORITHM': 'HS256',
     'JWT_VERIFY': True,
     'JWT_VERIFY_EXPIRATION': True,
@@ -158,6 +186,16 @@ This is the secret key used to sign the JWT. Make sure this is safe and not shar
 
 Default is your project's `settings.SECRET_KEY`.
 
+### JWT_PUBLIC_KEY
+This is an object of type `cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey`. It will be used to verify the signature of the incoming JWT. Will override `JWT_SECRET_KEY` when set. Read the [documentation](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/rsa/#cryptography.hazmat.primitives.asymmetric.rsa.RSAPublicKey) for more details. Please note that `JWT_ALGORITHM` must be set to one of `RS256`, `RS384`, or `RS512`.
+
+Default is `None`.
+
+### JWT_PRIVATE_KEY
+This is an object of type `cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey`. It will be used to sign the signature component of the JWT. Will override `JWT_SECRET_KEY` when set. Read the [documentation](https://cryptography.io/en/latest/hazmat/primitives/asymmetric/rsa/#cryptography.hazmat.primitives.asymmetric.rsa.RSAPrivateKey) for more details. Please note that `JWT_ALGORITHM` must be set to one of `RS256`, `RS384`, or `RS512`.
+
+Default is `None`.
+
 ### JWT_ALGORITHM
 
 Possible values are any of the [supported algorithms](https://github.com/jpadilla/pyjwt#algorithms) for cryptographic signing in PyJWT.
@@ -172,7 +210,8 @@ Default is `True`.
 
 ### JWT_VERIFY_EXPIRATION
 
-You can turn off expiration time verification with by setting `JWT_VERIFY_EXPIRATION` to `False`.
+You can turn off expiration time verification by setting `JWT_VERIFY_EXPIRATION` to `False`.
+Without expiration verification, JWTs will last forever meaning a leaked token could be used by an attacker indefinitely.
 
 Default is `True`.
 
@@ -224,7 +263,7 @@ Example:
 def jwt_response_payload_handler(token, user=None, request=None):
     return {
         'token': token,
-        'user': UserSerializer(user).data
+        'user': UserSerializer(user, context={'request': request}).data
     }
 ```
 
